@@ -1,0 +1,16 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: isolate-emailservice
+  namespace: default
+spec:
+  endpointSelector:
+    matchLabels:
+      app: emailservice
+  egress:
+  - toEndpoints:
+    - {}
+  egressDeny:
+  - toEndpoints:
+    - matchLabels:
+        app: checkoutservice

@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AMRP — Adaptive Microservice Runtime Protection</title>
+<style>
+  :root {
+    --bg: #0B0E14;
+    --panel: #11161F;
+    --border: #1F2733;
+    --text: #E6E9EF;
+    --text-dim: #7C8698;
+    --critical: #E24B4A;
+    --high: #EF9F27;
+    --medium: #FAC775;
+    --low: #639922;
+    --accent: #378ADD;
+    --mono: 'JetBrains Mono', 'Courier New', monospace;
+    --sans: -apple-system, 'Segoe UI', Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    padding: 24px;
+  }
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  h1 {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+  h1 span { color: var(--accent); }
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--low);
+    box-shadow: 0 0 8px var(--low);
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 16px;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+  }
+  .panel h2 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    margin: 0 0 12px;
+    font-weight: 600;
+  }
+  #graph-panel { grid-row: span 2; min-height: 420px; }
+  svg { width: 100%; height: 420px; }
+  .node-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    fill: var(--text);
+    paint-order: stroke;
+    stroke: var(--bg);
+    stroke-width: 3px;
+    stroke-linejoin: round;
+  }
+  .edge { stroke: var(--border); stroke-width: 1; transition: stroke 0.3s, stroke-width 0.3s; }
+  .edge-blocked { stroke: var(--critical); stroke-width: 2; stroke-dasharray: 5 3; }
+  .node-circle { transition: fill 0.35s ease, r 0.25s ease; }
+  .legend {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+  .legend-item { display: flex; align-items: center; gap: 5px; }
+  .legend-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .legend-line { width: 16px; height: 0; border-top: 2px dashed var(--critical); display: inline-block; }
+  .uptime {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--low);
+  }
+  .risk-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 0;
+    font-family: var(--mono);
+    font-size: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .risk-row:last-child { border-bottom: none; }
+  .badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+  }
+  .badge-CRITICAL { background: rgba(226,75,74,0.15); color: var(--critical); }
+  .badge-HIGH { background: rgba(239,159,39,0.15); color: var(--high); }
+  .badge-MEDIUM { background: rgba(250,199,117,0.15); color: var(--medium); }
+  .badge-LOW { background: rgba(99,153,34,0.15); color: var(--low); }
+  .log-item {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .log-item:last-child { border-bottom: none; }
+  .log-time { color: var(--text-dim); margin-right: 8px; }
+  .empty { color: var(--text-dim); font-family: var(--mono); font-size: 12px; padding: 8px 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>AMRP <span>//</span> Runtime Protection Console</h1>
+  <div class="status"><div class="dot" id="status-dot"></div><span id="status-text">connecting...</span></div>
+</header>
+
+<div class="grid">
+  <div class="panel" id="graph-panel">
+    <h2>Service graph <span class="uptime" id="uptime-counter"></span></h2>
+    <svg id="graph-svg"></svg>
+    <div class="legend">
+      <div class="legend-item"><span class="legend-dot" style="background:#E24B4A"></span>Critical</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#EF9F27"></span>High</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#FAC775"></span>Medium</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#639922"></span>Low / healthy</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#378ADD"></span>No compromise</div>
+      <div class="legend-item"><span class="legend-line"></span>Blocked connection</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Risk indicators</h2>
+    <div id="risk-list"><div class="empty">No compromise detected yet.</div></div>
+  </div>
+
+  <div class="panel">
+    <h2>Alerts timeline</h2>
+    <div id="alert-list"><div class="empty">Watching for suspicious activity...</div></div>
+  </div>
+
+  <div class="panel">
+    <h2>Containment actions</h2>
+    <div id="policy-list"><div class="empty">No policies applied yet.</div></div>
+  </div>
+</div>
+
+<script>
+const API = "http://localhost:8000/status";
+
+let lastIncidentTime = Date.now();
+let uptimeInterval = null;
+
+function mergeRiskScores(activeIncidents) {
+  // Combine risk scores across every active incident. If a service is
+  // CRITICAL in one incident and MEDIUM in another, CRITICAL wins — the
+  // graph should never understate risk.
+  const severityOrder = {CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3};
+  const merged = {};
+  Object.values(activeIncidents || {}).forEach(scores => {
+    Object.entries(scores).forEach(([service, risk]) => {
+      if (!(service in merged) || severityOrder[risk] < severityOrder[merged[service]]) {
+        merged[service] = risk;
+      }
+    });
+  });
+  return merged;
+}
+
+function riskColor(risk) {
+  return {CRITICAL: "#E24B4A", HIGH: "#EF9F27", MEDIUM: "#FAC775", LOW: "#639922"}[risk] || "#378ADD";
+}
+
+function riskRadius(risk) {
+  return {CRITICAL: 24, HIGH: 20, MEDIUM: 16, LOW: 13}[risk] || 13;
+}
+
+function getBlockedPairs(policies, activeIncidents) {
+  // Build a lookup of "compromised->target" edges that are currently
+  // blocked. Only count policies whose compromised service is STILL in
+  // active_incidents — once rolled back, its edges stop highlighting.
+  const blocked = new Set();
+  const activeNames = new Set(Object.keys(activeIncidents || {}));
+  (policies || []).forEach(p => {
+    if (p.name && p.name.startsWith("rollback-")) return;
+    if (!activeNames.has(p.compromised)) return;
+    (p.blocked || []).forEach(target => {
+      blocked.add(p.compromised + "->" + target);
+    });
+  });
+  return blocked;
+}
+
+function renderGraph(graph, mergedScores, policies, activeIncidents) {
+  const svg = document.getElementById("graph-svg");
+  const nodes = graph.nodes || [];
+  const edges = graph.edges || [];
+  if (nodes.length === 0) {
+    svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" class="node-label" fill="#7C8698">Waiting for traffic...</text>';
+    return;
+  }
+
+  const blockedPairs = getBlockedPairs(policies, activeIncidents);
+
+  // Wider radius and centered viewBox to give labels room to breathe.
+  svg.setAttribute("viewBox", "0 0 640 460");
+  const cx = 320, cy = 230, r = 175;
+  const positions = {};
+  nodes.forEach((n, i) => {
+    const angle = (i / nodes.length) * 2 * Math.PI - Math.PI / 2;
+    positions[n.id] = { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
+  });
+
+  let svgContent = "";
+
+  // Draw edges first (so nodes sit on top), highlighting blocked ones
+  edges.forEach(e => {
+    const s = positions[e.source], t = positions[e.target];
+    if (!s || !t) return;
+    const key = e.source + "->" + e.target;
+    const isBlocked = blockedPairs.has(key);
+    svgContent += `<line class="edge ${isBlocked ? 'edge-blocked' : ''}" x1="${s.x}" y1="${s.y}" x2="${t.x}" y2="${t.y}" />`;
+  });
+
+  // Draw nodes with risk-scaled radius and readable labels with a stroke
+  // "halo" (set in CSS) instead of overlapping plain text.
+  nodes.forEach(n => {
+    const pos = positions[n.id];
+    const risk = mergedScores[n.id];
+    const color = riskColor(risk);
+    const radius = riskRadius(risk);
+    const labelY = pos.y + radius + 14;
+    svgContent += `
+      <circle class="node-circle" cx="${pos.x}" cy="${pos.y}" r="${radius}" fill="${color}" opacity="${risk ? '0.95' : '0.55'}" />
+      <text x="${pos.x}" y="${labelY}" text-anchor="middle" class="node-label">${n.id}</text>
+    `;
+  });
+
+  svg.innerHTML = svgContent;
+}
+
+function updateUptime(alerts) {
+  const hasIncident = alerts && alerts.length > 0 &&
+    alerts[0].message && alerts[0].message.toLowerCase().includes("suspicious");
+  // Reset the clock whenever the newest alert is a fresh detection
+  if (hasIncident) {
+    const newestTime = alerts[0].time;
+    if (newestTime !== window._lastSeenAlertTime) {
+      window._lastSeenAlertTime = newestTime;
+      lastIncidentTime = Date.now();
+    }
+  }
+}
+
+function tickUptime() {
+  const seconds = Math.floor((Date.now() - lastIncidentTime) / 1000);
+  document.getElementById("uptime-counter").textContent = `— stable for ${seconds}s`;
+}
+
+function renderRisk(activeIncidents, mergedScores) {
+  const el = document.getElementById("risk-list");
+  const compromisedNames = Object.keys(activeIncidents || {});
+  const entries = Object.entries(mergedScores || {});
+  if (compromisedNames.length === 0 || entries.length === 0) {
+    el.innerHTML = '<div class="empty">No compromise detected yet.</div>';
+    return;
+  }
+  const order = {CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3};
+  entries.sort((a, b) => order[a[1]] - order[b[1]]);
+  const header = compromisedNames.length > 1
+    ? `<div class="empty" style="margin-bottom:6px">Active incidents: ${compromisedNames.join(", ")}</div>`
+    : "";
+  el.innerHTML = header + entries.map(([service, risk]) =>
+    `<div class="risk-row"><span>${service}</span><span class="badge badge-${risk}">${risk}</span></div>`
+  ).join("");
+}
+
+function renderAlerts(alerts) {
+  const el = document.getElementById("alert-list");
+  if (!alerts || alerts.length === 0) {
+    el.innerHTML = '<div class="empty">Watching for suspicious activity...</div>';
+    return;
+  }
+  el.innerHTML = alerts.map(a =>
+    `<div class="log-item"><span class="log-time">${a.time}</span>${a.message}</div>`
+  ).join("");
+}
+
+function renderPolicies(policies) {
+  const el = document.getElementById("policy-list");
+  if (!policies || policies.length === 0) {
+    el.innerHTML = '<div class="empty">No policies applied yet.</div>';
+    return;
+  }
+  el.innerHTML = policies.map(p =>
+    `<div class="log-item"><span class="log-time">${p.time}</span>${p.name} — isolated ${p.compromised} from ${p.blocked.join(", ")}</div>`
+  ).join("");
+}
+
+async function poll() {
+  try {
+    const res = await fetch(API);
+    const data = await res.json();
+    document.getElementById("status-dot").style.background = "#639922";
+    document.getElementById("status-text").textContent = "live — last update " + (data.last_updated || "-");
+
+    const activeIncidents = data.active_incidents || {};
+    const mergedScores = mergeRiskScores(activeIncidents);
+
+    renderGraph(data.graph, mergedScores, data.policies, activeIncidents);
+    renderRisk(activeIncidents, mergedScores);
+    renderAlerts(data.alerts);
+    renderPolicies(data.policies);
+    updateUptime(data.alerts);
+  } catch (e) {
+    document.getElementById("status-dot").style.background = "#E24B4A";
+    document.getElementById("status-text").textContent = "engine offline — is main.py running?";
+  }
+}
+
+poll();
+setInterval(poll, 2000);
+setInterval(tickUptime, 1000);
+</script>
+
+</body>
+</html>
